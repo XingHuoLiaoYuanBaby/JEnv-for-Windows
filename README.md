@@ -1,3 +1,4 @@
+# 配置可参考 https://www.cnblogs.com/tysec/p/16055754.html
 
 # JEnv for Windows Version 2 is here.
 ### A complete rewrite of V.1
