@@ -1,4 +1,5 @@
 # 配置可参考 https://www.cnblogs.com/tysec/p/16055754.html
+# 配置不上就把jenv文件放到其他盘
 
 # JEnv for Windows Version 2 is here.
 ### A complete rewrite of V.1
