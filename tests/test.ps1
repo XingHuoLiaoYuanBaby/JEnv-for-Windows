@@ -10,9 +10,7 @@ BeforeAll {
         New-Item -ItemType Directory -Force -Path $PSScriptRoot/backups/ | Out-Null
     }
     
-    # Storing location of pwsh or powershell
-    ($powershell = @(Get-Command -Name @("pwsh.exe", "powershell.exe") -All)[0].source) 2>$null
-    $powershell = (Get-Item $powershell).Directory.FullName
+    # Getting the script so it can be run
     $jenv = ((get-item $PSScriptRoot).parent.fullname + "\src\jenv.ps1")
     
         
@@ -94,17 +92,142 @@ Describe 'JEnv Batch file using correct powershell' {
 Describe 'JEnv add command' {
 
     BeforeAll {
-        if ($null -eq $powershell) {
-            throw "Neither pwsh.exe nor powershell.exe have been found in the path. Please add one of them so the tests can use it"
-        }
+        $env:Path = $userPath + ";" + $PSHOME + ";" + $systemPath
     }
 
     It "Should not accept remove as name" {
-        $env:Path = $userPath + ";" + $powershell + ";" + $systemPath
         & $jenv add remove wrongpath | Should -Be 'Your JEnv name cannot be "remove". Checkout "jenv remove"'
+    }
+
+    It "Should add a valid java version" {
+        & $jenv add fake1 $PSScriptRoot/Fake-Executables/java/v1 | Should -Be 'Successfully added the new JEnv: fake1'
+        $config = Get-Content -Path ($Env:APPDATA + "\JEnv\jenv.config.json") -Raw |  ConvertFrom-Json
+        $template = [PSCustomObject]@{
+            name = "fake1"
+            path = "$($PSScriptRoot)/Fake-Executables/java/v1"
+        }
+        $config.jenvs | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+    }
+
+    It "Should add another valid java version" {
+        & $jenv add fake2 $PSScriptRoot/Fake-Executables/java/v2 | Should -Be 'Successfully added the new JEnv: fake2'
+        $config = Get-Content -Path ($Env:APPDATA + "\JEnv\jenv.config.json") -Raw |  ConvertFrom-Json
+        $template = @([PSCustomObject]@{
+                name = "fake1"
+                path = "$($PSScriptRoot)/Fake-Executables/java/v1"
+            }, [PSCustomObject]@{
+                name = "fake2"
+                path = "$($PSScriptRoot)/Fake-Executables/java/v2"
+            })
+        $config.jenvs | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+    }
+
+    It "Should not add another jenv with same name" {
+        & $jenv add fake1 $PSScriptRoot/Fake-Executables/java/v2 | Should -Be 'Theres already a JEnv with that name. Consider using "jenv list"'
+    }
+
+    It "Should not add an invalid jenv" {
+        & $jenv add invalid $PSScriptRoot/Fake-Executables/java/ | Should -Be $PSScriptRoot/Fake-Executables/java/"/bin/java.exe not found. Your Path is not a valid JAVA_HOME"
     }
 }
     
+Describe 'JEnv local command' {
+
+    BeforeAll {
+        $env:Path = $userPath + ";" + $PSHOME + ";" + $systemPath
+    }
+
+    It "Should add a valid local" {
+        & $jenv local fake1 | Should -Be  @('fake1', 'is now your local java version for', "C:\JEnv-for-Windows\tests")
+        $config = Get-Content -Path ($Env:APPDATA + "\JEnv\jenv.config.json") -Raw |  ConvertFrom-Json
+
+        $template = @([PSCustomObject]@{
+                path = "C:\JEnv-for-Windows\tests"
+                name = "fake1"
+            })
+        $config.locals | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+    }
+
+    It "Should add a valid local with different path and jdk" {
+        Set-Location $HOME
+        & $jenv local fake2 | Should -Be  @('fake2', 'is now your local java version for', $HOME)
+        $config = Get-Content -Path ($Env:APPDATA + "\JEnv\jenv.config.json") -Raw |  ConvertFrom-Json
+
+        $template = @([PSCustomObject]@{
+                path = "C:\JEnv-for-Windows\tests"
+                name = "fake1"
+            }, [PSCustomObject]@{
+                path = $HOME
+                name = "fake2"
+            })
+        $config.locals | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+    }
+
+    It "Should replace jenv for path if path already in config" {
+        & $jenv local fake1 | Should -Be  @('Your replaced your java version for', $HOME, 'with', 'fake1')
+        $config = Get-Content -Path ($Env:APPDATA + "\JEnv\jenv.config.json") -Raw |  ConvertFrom-Json
+
+        $template = @([PSCustomObject]@{
+                path = "C:\JEnv-for-Windows\tests"
+                name = "fake1"
+            }, [PSCustomObject]@{
+                path = $HOME
+                name = "fake1"
+            })
+        $config.locals | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+    }
+
+    It "Should not set a local if jenv was not added to the config" {
+        & $jenv local notavaible | Should -Be  'Theres no JEnv with name notavaible Consider using "jenv list"'
+    }
+
+    It "Should remove jenv from config" {
+        & $jenv local remove | Should -Be  "Your local JEnv was unset"
+        $config = Get-Content -Path ($Env:APPDATA + "\JEnv\jenv.config.json") -Raw |  ConvertFrom-Json
+
+        $template = @([PSCustomObject]@{
+                path = "C:\JEnv-for-Windows\tests"
+                name = "fake1"
+            })
+        $config.locals | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+    }
+}
+
+Describe 'JEnv remove command' {
+
+    It "Should remove jenv from jenvs and locals" {
+        & $jenv remove fake1 | Should -Be 'Your JEnv was removed successfully'
+        $config = Get-Content -Path ($Env:APPDATA + "\JEnv\jenv.config.json") -Raw |  ConvertFrom-Json
+
+        $template = @()
+        $config.locals | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+
+        $template = @([PSCustomObject]@{
+                name = "fake2"
+                path = "$($PSScriptRoot)/Fake-Executables/java/v2"
+            })
+        $config.jenvs | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+    }
+
+    It "Should remove jenv from jenvs" {
+        & $jenv remove fake2 | Should -Be 'Your JEnv was removed successfully'
+        $config = Get-Content -Path ($Env:APPDATA + "\JEnv\jenv.config.json") -Raw |  ConvertFrom-Json
+
+        $template = @()
+        $config.jenvs | ConvertTo-Json | Should -Be ($template | ConvertTo-Json)
+    }
+
+    It "Should not fail if it does not exist" {
+        & $jenv remove fake2 | Should -Be 'Your JEnv was removed successfully'
+    }
+
+    AfterAll {
+        Set-Location ((get-item $PSScriptRoot).parent.fullname + "/tests")
+    }
+
+}
+
+
 AfterAll {
     Write-Host -----------------------------------------------
     Write-Host Restoring your system from backups
